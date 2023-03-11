@@ -55,7 +55,7 @@ pub async fn worker<'d, Periph, SckPin, MosiPin, MisoPin, CsPin, TxDma, RxDma, M
                         miso.clone_unchecked(),
                         txdma.clone_unchecked(),
                         rxdma.clone_unchecked(),
-                        mhz(1),
+                        mhz(10),
                         Default::default(),
                     );
                     let cs =
@@ -83,20 +83,6 @@ pub async fn worker<'d, Periph, SckPin, MosiPin, MisoPin, CsPin, TxDma, RxDma, M
                 }
                 let n = txlen + rxlen;
                 let r = { spi.transfer_in_place(&mut buf.borrow_mut()[..n]).await };
-
-                /*let mut r = if txlen > 0 {
-                    spi.write(&buf.borrow()[..txlen]).await
-                } else {
-                    Ok(())
-                };
-                if r.is_ok() {
-                    r = if rxlen > 0 {
-                        let buf = &mut buf.borrow_mut()[..rxlen];
-                        spi.read(&mut buf[..]).await
-                    } else {
-                        Ok(())
-                    };
-                }*/
 
                 cs.set_high();
                 status.signal(r);

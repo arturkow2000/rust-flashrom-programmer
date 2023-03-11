@@ -1,10 +1,14 @@
 use core::{cell::RefCell, mem};
 
-use embassy_stm32::gpio::{self, Output};
+use embassy_stm32::{
+    gpio::{self, Output},
+    usart::{rx_ringbuffered::RingBufferedUartRx, UartTx},
+};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, signal::Signal};
 use embassy_time::{Duration, Timer};
+use embedded_io::asynch::{Read, Write};
 
-use crate::{spi, uart, PowerPin, SPI_BUF_LEN};
+use crate::{spi, ControlUart, ControlUartRxDma, ControlUartTxDma, PowerPin, SPI_BUF_LEN};
 
 const S_ACK: u8 = 0x06;
 const S_NAK: u8 = 0x15;
@@ -49,8 +53,8 @@ const PROGRAMMER_NAME_WITH_ACK: [u8; 17] = *b"\x06Rust serprog\x00\x00\x00\x00";
 
 #[embassy_executor::task]
 pub async fn run(
-    mut tx: uart::Writer<'static>,
-    mut rx: uart::Reader<'static>,
+    mut tx: UartTx<'static, ControlUart, ControlUartTxDma>,
+    mut rx: RingBufferedUartRx<'static, ControlUart, ControlUartRxDma>,
     power: PowerPin,
     spi_buf: &'static RefCell<[u8; SPI_BUF_LEN]>,
     spi_control: &'static Channel<NoopRawMutex, spi::Request, { mem::size_of::<spi::Request>() }>,
@@ -71,50 +75,52 @@ pub async fn run(
 
     loop {
         let mut cmd = [0];
-        rx.read(&mut cmd[..]).await;
+        rx.read_exact(&mut cmd[..]).await.unwrap();
 
         debug!("process cmd {:#x}", cmd[0]);
         match cmd[0] {
             S_CMD_NOP => {
-                tx.write(&[S_ACK]);
+                tx.write_all(&[S_ACK]).await.unwrap();
             }
             S_CMD_Q_IFACE => {
-                tx.write(&[S_ACK, 1, 0]);
+                tx.write_all(&[S_ACK, 1, 0]).await.unwrap();
             }
             S_CMD_Q_PGMNAME => {
-                tx.write(&PROGRAMMER_NAME_WITH_ACK);
+                tx.write_all(&PROGRAMMER_NAME_WITH_ACK).await.unwrap();
             }
             S_CMD_Q_SERBUF => {
                 // TODO: implement
                 let mut resp = [S_ACK, 0, 0];
                 let val: u16 = 32;
                 resp[1..3].copy_from_slice(&val.to_le_bytes());
-                tx.write(&resp);
+                tx.write_all(&resp).await.unwrap();
             }
             S_CMD_Q_CMDMAP => {
-                tx.write(&CMDMAP_WITH_ACK);
+                tx.write_all(&CMDMAP_WITH_ACK).await.unwrap();
             }
             S_CMD_SYNCNOP => {
-                tx.write(&[S_NAK, S_ACK]);
+                tx.write_all(&[S_NAK, S_ACK]).await.unwrap();
             }
             S_CMD_Q_BUSTYPE => {
                 // Only SPI is supported
-                tx.write(&[S_ACK, 8]);
+                tx.write_all(&[S_ACK, 8]).await.unwrap();
             }
             S_CMD_Q_WRNMAXLEN | S_CMD_Q_RDNMAXLEN => {
                 let x = ((SPI_BUF_LEN as u32) / 2).to_le_bytes();
                 debug_assert_eq!(x[0], 0);
-                tx.write(&[S_ACK, x[1], x[2], x[3]]);
+                tx.write_all(&[S_ACK, x[1], x[2], x[3]]).await.unwrap();
             }
             S_CMD_S_BUSTYPE => {
                 let mut bus = [0u8];
-                rx.read(&mut bus[..]).await;
-                tx.write(&[if bus[0] == 8 { S_ACK } else { S_NAK }]);
+                rx.read_exact(&mut bus[..]).await.unwrap();
+                tx.write_all(&[if bus[0] == 8 { S_ACK } else { S_NAK }])
+                    .await
+                    .unwrap();
             }
             S_CMD_O_SPIOP => {
                 let mut params = [0u8; 6];
                 debug!("read params");
-                rx.read(&mut params[..]).await;
+                rx.read_exact(&mut params[..]).await.unwrap();
 
                 let slen = ((params[0] as u32) << 0)
                     | ((params[1] as u32) << 8)
@@ -147,7 +153,7 @@ pub async fn run(
 
                 if slen > 0 {
                     let mut spi_buf = spi_buf.borrow_mut();
-                    rx.read(&mut spi_buf[..slen as usize]).await;
+                    rx.read_exact(&mut spi_buf[..slen as usize]).await.unwrap();
                 }
 
                 spi_control
@@ -159,21 +165,23 @@ pub async fn run(
 
                 match spi_status.wait().await {
                     Ok(()) => {
-                        tx.write(&[S_ACK]);
+                        tx.write_all(&[S_ACK]).await.unwrap();
                         if rlen > 0 {
                             let b = spi_buf.borrow();
-                            tx.write(&b[slen as usize..slen as usize + rlen as usize]);
+                            tx.write_all(&b[slen as usize..slen as usize + rlen as usize])
+                                .await
+                                .unwrap();
                         }
                     }
                     Err(e) => {
                         error!("spi transfer failed: {}", e);
-                        tx.write(&[S_NAK]);
+                        tx.write_all(&[S_NAK]).await.unwrap();
                     }
                 }
             }
             S_CMD_S_PIN_STATE => {
                 let mut enable = [0u8];
-                rx.read(&mut enable[..]).await;
+                rx.read_exact(&mut enable[..]).await.unwrap();
                 let enable = enable[0] != 0;
 
                 defmt::trace!("driver enable={}", enable);
@@ -188,11 +196,11 @@ pub async fn run(
                     power.set_high();
                 }
 
-                tx.write(&[S_ACK]);
+                tx.write_all(&[S_ACK]).await.unwrap();
             }
             c => {
                 warn!("unsupported cmd {:#x}", c);
-                tx.write(&[S_NAK]);
+                tx.write_all(&[S_NAK]).await.unwrap();
                 debug_assert!(false);
             }
         }

@@ -5,10 +5,9 @@
 use core::{cell::RefCell, mem};
 
 use embassy_executor::{Spawner, _export::StaticCell};
-use embassy_futures::join::join;
 use embassy_stm32::{
     interrupt,
-    peripherals::PB2,
+    peripherals::{DMA1_CH6, DMA1_CH7, PB2, USART2},
     rcc::{AHBPrescaler, APBPrescaler, ClockSrc, PLLClkDiv, PLLMul, PLLSource, PLLSrcDiv},
     usart::{self, DataBits, Parity, StopBits, Uart},
 };
@@ -21,15 +20,18 @@ extern crate panic_probe;
 
 mod serprog;
 mod spi;
-mod uart;
+// mod uart;
 
-const UART_BUF_LEN: usize = 1024;
-const SPI_BUF_LEN: usize = 1024;
+const UART_BUF_LEN: usize = 16384;
+const SPI_BUF_LEN: usize = 16384;
 type PowerPin = PB2;
+type ControlUart = USART2;
+type ControlUartTxDma = DMA1_CH7;
+type ControlUartRxDma = DMA1_CH6;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    static UART_STATE: StaticCell<uart::State> = StaticCell::new();
+    //static UART_STATE: StaticCell<uart::State> = StaticCell::new();
     static UART_TX_BUF: StaticCell<[u8; UART_BUF_LEN]> = StaticCell::new();
     static UART_RX_BUF: StaticCell<[u8; UART_BUF_LEN]> = StaticCell::new();
     static SPI_BUF: StaticCell<RefCell<[u8; SPI_BUF_LEN]>> = StaticCell::new();
@@ -102,32 +104,32 @@ async fn main(spawner: Spawner) {
         p.DMA1_CH6,
         {
             let mut cfg = usart::Config::default();
-            // Higher baud rates cannot properly handle bursts of data. We
-            // should use circular DMA for RX but Embassy doesn't support it
-            // currently. Normal (non-circular DMA) takes to much time to restart.
-            cfg.baudrate = 9600;
+            cfg.baudrate = 921600;
             cfg.data_bits = DataBits::DataBits8;
             cfg.parity = Parity::ParityNone;
             cfg.stop_bits = StopBits::STOP1;
             cfg
         },
     );
-    let (uart_fut, rx, tx) = uart::BufferedUart::new(
+    let (uart_tx, uart_rx) = uart.split();
+    let uart_rx = uart_rx.into_ring_buffered(UART_RX_BUF.init_with(|| [0u8; UART_BUF_LEN]));
+
+    /*let (uart_fut, rx, tx) = uart::BufferedUart::new(
         uart,
         UART_STATE.init_with(Default::default),
         UART_TX_BUF.init_with(|| [0u8; UART_BUF_LEN]),
         UART_RX_BUF.init_with(|| [0u8; UART_BUF_LEN]),
     )
-    .split();
+    .split();*/
 
     spawner.must_spawn(serprog::run(
-        tx,
-        rx,
+        uart_tx,
+        uart_rx,
         p.PB2,
         spi_buf,
         spi_control,
         spi_status,
     ));
 
-    join(uart_fut, spi_fut).await;
+    spi_fut.await;
 }
