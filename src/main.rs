@@ -20,7 +20,6 @@ extern crate panic_probe;
 
 mod serprog;
 mod spi;
-// mod uart;
 
 const UART_BUF_LEN: usize = 16384;
 const SPI_BUF_LEN: usize = 16384;
@@ -31,8 +30,6 @@ type ControlUartRxDma = DMA1_CH6;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    //static UART_STATE: StaticCell<uart::State> = StaticCell::new();
-    static UART_TX_BUF: StaticCell<[u8; UART_BUF_LEN]> = StaticCell::new();
     static UART_RX_BUF: StaticCell<[u8; UART_BUF_LEN]> = StaticCell::new();
     static SPI_BUF: StaticCell<RefCell<[u8; SPI_BUF_LEN]>> = StaticCell::new();
     static SPI_CONTROL: StaticCell<
@@ -63,19 +60,6 @@ async fn main(spawner: Spawner) {
                 Some(PLLClkDiv::Div8),
             )),
         };
-        /*config.rcc = embassy_stm32::rcc::Config {
-            mux: ClockSrc::PLL(
-                PLLSource::HSI16,
-                PLLClkDiv::Div2,
-                PLLSrcDiv::Div1,
-                PLLMul::Mul10,
-                None,
-            ),
-            ahb_pre: AHBPrescaler::NotDivided,
-            apb1_pre: APBPrescaler::NotDivided,
-            apb2_pre: APBPrescaler::NotDivided,
-            pllsai1: None,
-        };*/
         config
     });
 
@@ -113,14 +97,6 @@ async fn main(spawner: Spawner) {
     );
     let (uart_tx, uart_rx) = uart.split();
     let uart_rx = uart_rx.into_ring_buffered(UART_RX_BUF.init_with(|| [0u8; UART_BUF_LEN]));
-
-    /*let (uart_fut, rx, tx) = uart::BufferedUart::new(
-        uart,
-        UART_STATE.init_with(Default::default),
-        UART_TX_BUF.init_with(|| [0u8; UART_BUF_LEN]),
-        UART_RX_BUF.init_with(|| [0u8; UART_BUF_LEN]),
-    )
-    .split();*/
 
     spawner.must_spawn(serprog::run(
         uart_tx,

@@ -18,16 +18,7 @@ const S_CMD_Q_CMDMAP: u8 = 0x02; // Query supported commands bitma
 const S_CMD_Q_PGMNAME: u8 = 0x03; // Query programmer name
 const S_CMD_Q_SERBUF: u8 = 0x04; // Query Serial Buffer Size
 const S_CMD_Q_BUSTYPE: u8 = 0x05; // Query supported bustypes
-const S_CMD_Q_CHIPSIZE: u8 = 0x06; // Query supported chipsize (2^n forma
-const S_CMD_Q_OPBUF: u8 = 0x07; // Query operation buffer size
 const S_CMD_Q_WRNMAXLEN: u8 = 0x08; // Query Write to opbuf: Write-N maximum leng
-const S_CMD_R_BYTE: u8 = 0x09; // Read a single byte
-const S_CMD_R_NBYTES: u8 = 0x0A; // Read n bytes
-const S_CMD_O_INIT: u8 = 0x0B; // Initialize operation buffer
-const S_CMD_O_WRITEB: u8 = 0x0C; // Write opbuf: Write byte with addres
-const S_CMD_O_WRITEN: u8 = 0x0D; // Write to opbuf: Write-N
-const S_CMD_O_DELAY: u8 = 0x0E; // Write opbuf: udelay
-const S_CMD_O_EXEC: u8 = 0x0F; // Execute operation buffer
 const S_CMD_SYNCNOP: u8 = 0x10; // Special no-operation that returns NAK+A
 const S_CMD_Q_RDNMAXLEN: u8 = 0x11; // Query read-n maximum length
 const S_CMD_S_BUSTYPE: u8 = 0x12; // Set used bustype(s).
@@ -133,23 +124,6 @@ pub async fn run(
 
                 assert!(slen as usize <= SPI_BUF_LEN);
                 assert!(rlen as usize <= SPI_BUF_LEN);
-
-                /*if slen > 0 {
-                    let mut spi_buf = spi_buf.borrow_mut();
-                    rx.read(&mut spi_buf[..slen as usize]).await;
-                    if rlen > slen {
-                        spi_buf[slen as usize..slen as usize + rlen as usize - 1].fill(0);
-                    }
-                }
-
-                let n = max(slen, rlen);
-                let direction = if slen == 0 {
-                    TransferDirection::Rx
-                } else if rlen == 0 {
-                    TransferDirection::Tx
-                } else {
-                    TransferDirection::Both
-                };*/
 
                 if slen > 0 {
                     let mut spi_buf = spi_buf.borrow_mut();
