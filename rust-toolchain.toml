@@ -1,0 +1,4 @@
+[toolchain]
+profile = "default"
+channel = "nightly-2023-03-05"
+targets = ["thumbv7em-none-eabihf"]
