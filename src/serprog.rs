@@ -8,7 +8,9 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, signal::
 use embassy_time::{Duration, Timer};
 use embedded_io::asynch::{Read, Write};
 
-use crate::{spi, ControlUart, ControlUartRxDma, ControlUartTxDma, PowerPin, SPI_BUF_LEN};
+use crate::{
+    spi, ControlUart, ControlUartRxDma, ControlUartTxDma, PowerPin, SPI_BUF_LEN, UART_BUF_LEN,
+};
 
 const S_ACK: u8 = 0x06;
 const S_NAK: u8 = 0x15;
@@ -80,9 +82,8 @@ pub async fn run(
                 tx.write_all(&PROGRAMMER_NAME_WITH_ACK).await.unwrap();
             }
             S_CMD_Q_SERBUF => {
-                // TODO: implement
                 let mut resp = [S_ACK, 0, 0];
-                let val: u16 = 32;
+                let val: u16 = UART_BUF_LEN.try_into().unwrap();
                 resp[1..3].copy_from_slice(&val.to_le_bytes());
                 tx.write_all(&resp).await.unwrap();
             }
@@ -97,7 +98,7 @@ pub async fn run(
                 tx.write_all(&[S_ACK, 8]).await.unwrap();
             }
             S_CMD_Q_WRNMAXLEN | S_CMD_Q_RDNMAXLEN => {
-                let x = ((SPI_BUF_LEN as u32) / 2).to_le_bytes();
+                let x = ((SPI_BUF_LEN as u32) / 2).to_be_bytes();
                 debug_assert_eq!(x[0], 0);
                 tx.write_all(&[S_ACK, x[1], x[2], x[3]]).await.unwrap();
             }
